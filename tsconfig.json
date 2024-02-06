@@ -1,0 +1,31 @@
+{
+  "include": [
+    "./**/*"
+  ],
+  "compilerOptions": {
+    "types": [
+      "@cloudflare/workers-types",
+      "node",
+      "./src/env.d.ts"
+    ],
+    "lib": [
+      "ESNext"
+    ],
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": "."
+  }
+}
