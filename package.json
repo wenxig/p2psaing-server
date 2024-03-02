@@ -5,18 +5,19 @@
   "description": "cloudflare worker",
   "main": "./dist/main.js",
   "scripts": {
-    "fb": "bun build ./src/main.ts --outdir=\"./dist\"",
-    "build": "rollup -c --bundleConfigAsCjs"
+    "build": "rollup -c --bundleConfigAsCjs",
+    "dev": "npx wrangler dev",
+    "bw": "bun build ./src/main.ts --outfile=./dist/main.js --watch --minify"
   },
   "keywords": [],
   "author": "wenxig",
   "license": "MIT",
   "devDependencies": {
-    "@rollup/plugin-replace": "^5.0.5",
     "@cloudflare/workers-types": "^4.20240129.0",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
     "@rollup/plugin-typescript": "^11.1.6",
     "@types/crypto-js": "^4.2.2",
     "@types/lodash-es": "^4.17.12",
@@ -28,7 +29,9 @@
     "tslib": "^2.6.2"
   },
   "dependencies": {
+    "@octokit/types": "^12.6.0",
     "lodash-es": "^4.17.21",
+    "octokit": "^3.1.2",
     "zod": "^3.22.4"
   }
 }

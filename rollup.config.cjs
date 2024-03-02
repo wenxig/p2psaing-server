@@ -10,8 +10,6 @@ import replace from '@rollup/plugin-replace'
 import { readFileSync } from 'fs';
 import { join } from 'path';
 const configTs = JSON.parse(readFileSync(join(__dirname, './tsconfig.json')).toString())
-const /** @type {Record<string, any>} */ env = {}
-readFileSync(join(__dirname, `.env.local`)).toString().split('\n').map(s => s.split('=')).map(v => env[v[0]] = v[1])
 export default defineConfig({
   input: './src/main.ts',
   output: {
@@ -24,11 +22,10 @@ export default defineConfig({
     commonjs(),
     replace({
       preventAssignment: true,
-      ...env
     }),
     typescript(configTs),
     json(),
     cleanup(),
-    // terser()
+    terser()
   ]
 })

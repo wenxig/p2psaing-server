@@ -23,7 +23,7 @@ export const baseRType = [z.object({
   method: z.enum(['getUser_uid', 'getTime_uid']),
   data: z.number()
 }), z.object({
-  method: z.enum(['getSerectUser', 'getUser_email', 'getTime_email']),
+  method: z.enum(['getSerectUser', 'getUser_email', 'getTime_email', 'getAddAddress']),
   data: z.string()
 }), z.object({
   method: z.enum(['count'])
@@ -32,4 +32,13 @@ export const baseRType = [z.object({
   data: webSaveDeepRule
 }), z.object({
   method: z.enum(['getJWT'])
-}),]
+}), z.object({
+  method: z.enum(['addAddress']),
+  data: z.object({
+    from: webSaveRule,
+    to: z.number().or(z.string())
+  })
+}), z.object({
+  method: z.enum(['updateFile']),
+  path: z.string()
+})]
