@@ -7,7 +7,7 @@
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
     "dev": "bun bw & npx wrangler dev",
-    "bw": "bun build ./src/main.ts --outdir=./dist --watch --splitting",
+    "bw": "bun build ./src/main.ts --outdir=./dist --watch --splitting --sourcemap",
     "upload": "npx wrangler deploy"
   },
   "keywords": [],

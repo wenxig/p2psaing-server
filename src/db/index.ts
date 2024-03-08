@@ -8,7 +8,8 @@ export const api = async (data: Record<string, any>) => {
     secret: '59c44c2f'
   }
   const body = new FormData()
-  for (const key in data) body.append(key, data[key])
+  for (const key in data) body.append(key, isString(data[key]) ? data[key] : JSON.stringify(data[key]))
+  console.log(body);
 
   const headers = new Headers()
   headers.append('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
@@ -16,16 +17,20 @@ export const api = async (data: Record<string, any>) => {
   let bodySearch = '?'
   for (const key in data) {
     const d = JSON.stringify(data[key])
-    bodySearch += `${key}=${d.substring(1, d.length - 1)}&`
+    bodySearch += `${key}=${d}&`
   }
-  bodySearch.substring(bodySearch.length - 1)
-  return (await fetch(`https://tinywebdb.appinventor.space/api${bodySearch}`, {
-    method: 'POST',
-    headers,
-    body,
-    redirect: "follow",
-    cf: { apps: false },
-  })).json() as any
+  bodySearch = bodySearch.substring(0, bodySearch.length - 1).replace(/("(?=&))|((?<=\=)")|("$)/g, '')
+  try {
+    return (await fetch(`https://tinywebdb.appinventor.space/api${bodySearch}`, {
+      method: 'POST',
+      headers,
+      body,
+      redirect: "follow",
+      cf: { apps: false },
+    })).json() as any
+  } catch (error) {
+    console.log('err:', error)
+  }
 }
 export const count = async (): Promise<number> => (await api({
   action: "count"

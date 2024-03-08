@@ -1,12 +1,13 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { sign, verify } from 'hono/jwt'
 import { ResponseType } from './res';
 import { z } from 'zod';
 import * as dataType from './type';
 import * as db from './db';
 import { store } from "./store";
-import { HmacSHA512, AES } from "crypto-js";
-import { forEach } from 'lodash-es';
+import { forEach, isEmpty } from 'lodash-es';
+import type { StatusCode } from 'hono/utils/http-status';
+import type { BlankInput } from 'hono/types';
 namespace jwt {
   export const payload = {
     sub: 'p2psaing',
@@ -31,58 +32,60 @@ app.get('/jwt', c => c.json({
   code: ResponseType.Code.success,
   data: jwt.value
 } as ResponseType.Success, 200))
-
-app.post('/user', async c => {
+async function handleGetUser(c: Context<ContextEnv, "/user", BlankInput>) {
   const header = store.header = c.req.header()
   const body = dataType.getUser.safeParse(await c.req.json())
   const authorization = z.string().safeParse(header.authorization)
-  if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
-    if (body.success) {
-      try {
-        switch (body.data.type) {
-          case "uid": {
-            return c.json({
-              code: ResponseType.Code.success,
-              data: await db.searchByUid(body.data.uid)
-            } as ResponseType.Success, 200)
+  if (body.success) {
+    try {
+      switch (body.data.type) {
+        case "uid": {
+          return c.json({
+            code: ResponseType.Code.success,
+            data: await db.searchByUid(body.data.uid)
+          } as ResponseType.Success, 200)
 
-          }
-          case "email": {
-            return c.json({
-              code: ResponseType.Code.success,
-              data: await db.searchByEmail(body.data.email)
-            } as ResponseType.Success, 200)
-          }
-          case "pid": {
+        }
+        case "email": {
+          return c.json({
+            code: ResponseType.Code.success,
+            data: await db.searchByEmail(body.data.email)
+          } as ResponseType.Success, 200)
+        }
+        case "pid": {
+          if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
             return c.json({
               code: ResponseType.Code.success,
               data: await db.get(body.data.pid)
             } as ResponseType.Success, 200)
           }
+          return c.json({
+            code: ResponseType.Code.fail,
+            data: {
+              code: ResponseType.FailCode.unauthorization,
+              message: '认证错误'
+            }
+          } as ResponseType.Fail, 401)
         }
-      } catch (error) {
-        return c.json({
-          code: ResponseType.Code.success,
-          data: error
-        } as ResponseType.Success, 500)
       }
+    } catch (error) {
+      return c.json({
+        code: ResponseType.Code.success,
+        data: error
+      } as ResponseType.Success, 500)
     }
-    return c.json({
-      code: ResponseType.Code.fail,
-      data: {
-        code: ResponseType.FailCode.format,
-        message: '消息格式错误'
-      }
-    } as ResponseType.Fail, 406)
   }
   return c.json({
     code: ResponseType.Code.fail,
     data: {
-      code: ResponseType.FailCode.unauthorization,
-      message: '认证错误'
+      code: ResponseType.FailCode.format,
+      message: '消息格式错误'
     }
-  } as ResponseType.Fail, 401)
-}).put(async c => {
+  } as ResponseType.Fail, 406)
+
+}
+
+app.post('/user', handleGetUser).put(async c => {
   const header = store.header = c.req.header()
   const authorization = z.string().safeParse(header.authorization)
   if (!(authorization.success && await verify(authorization.data, jwt.secret, 'HS512'))) return c.json({
@@ -103,25 +106,19 @@ app.post('/user', async c => {
   } as ResponseType.Fail, 406)
   try {
     await db.api({
-      data: {
-        tag: body.pid,
-        value: body,
-        action: 'update'
-      }
+      tag: body.pid,
+      value: body,
+      action: 'update'
     })
     await db.api({
-      data: {
-        tag: `${body.uid}.value`,
-        value: dataType.webSaveRule.parse(body),
-        action: 'update'
-      }
+      tag: `${body.uid}.value`,
+      value: dataType.webSaveRule.parse(body),
+      action: 'update'
     })
     await db.api({
-      data: {
-        tag: `${body.email}.value`,
-        value: dataType.webSaveRule.parse(body),
-        action: 'update'
-      }
+      tag: `${body.email}.value`,
+      value: dataType.webSaveRule.parse(body),
+      action: 'update'
     })
     const time = new Date().getTime()
     await db.api({
@@ -139,6 +136,8 @@ app.post('/user', async c => {
       data: time
     } as ResponseType.Success, 200)
   } catch (error) {
+    console.error(error);
+
     return c.json({
       code: ResponseType.Code.success,
       data: error
@@ -146,56 +145,62 @@ app.post('/user', async c => {
   }
 })
 
-app.post('/time', async c => {
-  const header = store.header = c.req.header()
-  const body = dataType.getTime.safeParse(await c.req.json())
-  const authorization = z.string().safeParse(header.authorization)
-  if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
-    if (body.success) {
-      try {
-        switch (body.data.type) {
-          case "uid": {
-            return c.json({
-              code: ResponseType.Code.success,
-              data: await db.getTimeByUid(body.data.uid)
-            } as ResponseType.Success, 200)
-          }
-          case "email": {
-            return c.json({
-              code: ResponseType.Code.success,
-              data: await db.getTimeByEmail(body.data.email)
-            } as ResponseType.Success, 200)
-          }
-        }
-      } catch (error) {
-        return c.json({
-          code: ResponseType.Code.success,
-          data: error
-        } as ResponseType.Success, 500)
-      }
-
-    }
+app.post('/user/has', async c => {
+  const _res = await handleGetUser(c)
+  const res: ResponseType.Fail | ResponseType.Success = await _res.json()
+  if (res.code == ResponseType.Code.success) {
     return c.json({
-      code: ResponseType.Code.fail,
-      data: {
-        code: ResponseType.FailCode.format,
-        message: '消息格式错误'
+      code: ResponseType.Code.success,
+      data: !isEmpty(res.data)
+    } as ResponseType.Success, 200)
+  }
+  return c.json(res, _res.status as StatusCode)
+})
+
+app.post('/time', async c => {
+  store.header = c.req.header()
+  const body = dataType.getTime.safeParse(await c.req.json())
+  if (body.success) {
+    try {
+      switch (body.data.type) {
+        case "uid": {
+          return c.json({
+            code: ResponseType.Code.success,
+            data: await db.getTimeByUid(body.data.uid)
+          } as ResponseType.Success, 200)
+        }
+        case "email": {
+          return c.json({
+            code: ResponseType.Code.success,
+            data: await db.getTimeByEmail(body.data.email)
+          } as ResponseType.Success, 200)
+        }
       }
-    } as ResponseType.Fail, 406)
+    } catch (error) {
+      return c.json({
+        code: ResponseType.Code.success,
+        data: error
+      } as ResponseType.Success, 500)
+    }
+
   }
   return c.json({
     code: ResponseType.Code.fail,
     data: {
-      code: ResponseType.FailCode.unauthorization,
-      message: '认证错误'
+      code: ResponseType.FailCode.format,
+      message: '消息格式错误'
     }
-  } as ResponseType.Fail, 401)
+  } as ResponseType.Fail, 406)
+
 })
 
-app.get('/count', async c => c.json({
-  code: ResponseType.Code.success,
-  data: await db.count()
-} as ResponseType.Success, 200))
+app.get('/count', async c => {
+  store.header = c.req.header()
+  return c.json({
+    code: ResponseType.Code.success,
+    data: await db.count()
+  } as ResponseType.Success, 200)
+})
 app.all('/file/*', async c => {
   const header = store.header = c.req.header()
   const authorization = z.string().safeParse(header.authorization).success ? header.authorization : ''
@@ -236,6 +241,7 @@ app.all('/file/*', async c => {
 })
 
 app.put('/user/:uid/store/*', async c => {
+  store.header = c.req.header()
   const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
   try {
     await db.setStore(c.req.param().uid, key, await c.req.text())
@@ -265,6 +271,7 @@ app.put('/user/:uid/store/*', async c => {
   }
 }).get(async c => {
   const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
+  store.header = c.req.header()
   try {
     return c.json({
       code: ResponseType.Code.success,

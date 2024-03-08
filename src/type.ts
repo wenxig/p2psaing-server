@@ -32,6 +32,17 @@ export const getUser = z.object({
   pid: z.string()
 }))
 
+export const hasUser = z.object({
+  type: z.enum(['uid']),
+  uid: z.number().int(),
+}).or(z.object({
+  type: z.enum(['email']),
+  email: z.string().email()
+})).or(z.object({
+  type: z.enum(['pid']),
+  pid: z.string()
+}))
+
 export const getTime = z.object({
   type: z.enum(['uid']),
   uid: z.number().int(),
