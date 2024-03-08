@@ -6,8 +6,9 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "dev": "npx wrangler dev",
-    "bw": "bun build ./src/main.ts --outfile=./dist/main.js --watch --minify"
+    "dev": "bun bw & npx wrangler dev",
+    "bw": "bun build ./src/main.ts --outdir=./dist --watch --splitting",
+    "upload": "npx wrangler deploy"
   },
   "keywords": [],
   "author": "wenxig",
@@ -22,16 +23,17 @@
     "@types/crypto-js": "^4.2.2",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^20.11.16",
-    "crypto-js": "^4.2.0",
+    "prettier": "^3.2.5",
+    "prettier-plugin-tailwindcss": "^0.5.12",
     "rollup": "^4.9.6",
     "rollup-plugin-cleanup": "^3.2.1",
     "rollup-plugin-terser": "^7.0.2",
     "tslib": "^2.6.2"
   },
   "dependencies": {
-    "@octokit/types": "^12.6.0",
+    "crypto-js": "^4.2.0",
+    "hono": "^4.0.10",
     "lodash-es": "^4.17.21",
-    "octokit": "^3.1.2",
     "zod": "^3.22.4"
   }
 }

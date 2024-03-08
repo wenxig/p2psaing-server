@@ -1,96 +1,292 @@
-import { toString } from 'lodash-es';
-import { TypeOf } from 'zod';
+import { Hono } from 'hono'
+import { sign, verify } from 'hono/jwt'
+import { ResponseType } from './res';
+import { z } from 'zod';
+import * as dataType from './type';
 import * as db from './db';
-import * as typeCheck from './type';
-import { getJWT } from './jwt';
-addEventListener('fetch', event => event.respondWith(handleRequest(event)));
-const jwtToken = getJWT()
-function encryptBykaisa(str: string, iv: number) {
-  let outStr = "";
-  for (let i = 0; i < str.length; i++)if (str.charCodeAt(i) >= 65 && str.charCodeAt(i) <= 90) outStr += String.fromCharCode((str.charCodeAt(i) - 65 + iv + 26) % 26 + 65)
-  else if (str.charCodeAt(i) >= 97 && str.charCodeAt(i) <= 122) outStr += String.fromCharCode((str.charCodeAt(i) - 97 + iv + 26) % 26 + 97)
-  else outStr += String.fromCharCode(str.charCodeAt(i));
-  return outStr;
+import { store } from "./store";
+import { HmacSHA512, AES } from "crypto-js";
+import { forEach } from 'lodash-es';
+namespace jwt {
+  export const payload = {
+    sub: 'p2psaing',
+    role: 'wenxig',
+    alg: 'HS512'
+  } as const
+  export const secret = 'vhbuioy78a32et6r7drtxfcyutfdresxyrtuyfdresxdfcgtyfui7uihfip239u0hjfaf2hf89h29fniune2iuf'
+  export let value = ''
+
 }
-async function handleRequest({ request }: FetchEvent) {
-  const data: TypeOf<(typeof typeCheck.baseRType)[number]> = await request.json()
-  const isRequest = typeCheck.baseRType.some(r => r.safeParse(data).success)
-  if (!isRequest) return new Response('request format error');
-  if (data.method == 'getJWT') return new Response(jwtToken);
-  for (const headers of request.headers.entries()) if (/jwt/ig.test(headers[0])) {
-    var headerJwt = headers[1]
-    break
-  } else if (/authorization/ig.test(headers[0])) {
-    var updataType = headers[1]
+jwt.value = await sign(jwt.payload, jwt.secret, jwt.payload.alg)
+
+
+/* Cloudflare绑定 */
+type Bindings = {};
+/* Hono变量 */
+type Variables = {};
+type ContextEnv = { Bindings: Bindings; Variables: Variables };
+const app = new Hono<ContextEnv>()
+
+app.get('/jwt', c => c.json({
+  code: ResponseType.Code.success,
+  data: jwt.value
+} as ResponseType.Success, 200))
+
+app.post('/user', async c => {
+  const header = store.header = c.req.header()
+  const body = dataType.getUser.safeParse(await c.req.json())
+  const authorization = z.string().safeParse(header.authorization)
+  if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
+    if (body.success) {
+      try {
+        switch (body.data.type) {
+          case "uid": {
+            return c.json({
+              code: ResponseType.Code.success,
+              data: await db.searchByUid(body.data.uid)
+            } as ResponseType.Success, 200)
+
+          }
+          case "email": {
+            return c.json({
+              code: ResponseType.Code.success,
+              data: await db.searchByEmail(body.data.email)
+            } as ResponseType.Success, 200)
+          }
+          case "pid": {
+            return c.json({
+              code: ResponseType.Code.success,
+              data: await db.get(body.data.pid)
+            } as ResponseType.Success, 200)
+          }
+        }
+      } catch (error) {
+        return c.json({
+          code: ResponseType.Code.success,
+          data: error
+        } as ResponseType.Success, 500)
+      }
+    }
+    return c.json({
+      code: ResponseType.Code.fail,
+      data: {
+        code: ResponseType.FailCode.format,
+        message: '消息格式错误'
+      }
+    } as ResponseType.Fail, 406)
   }
-  const json = {
-    headers: { 'Content-Type': 'application/json' },
-  }
-  if (headerJwt! != jwtToken) return new Response('jwt error');
-  //不能提取函数 不能sw
-  if (data.method == 'getUser_uid') return new Response(JSON.stringify(await db.searchByUid(request, data.data)), json);
-  if (data.method == 'getUser_email') return new Response(JSON.stringify(await db.searchByEmail(request, data.data)), json);
-  if (data.method == 'getSerectUser') {
-    const user = await db.get(request, data.data)
-    if (!user[1]) return new Response('user not found');
-    return new Response(encryptBykaisa(JSON.stringify(user), 10));
-  }
-  if (data.method == 'getAddAddress') return new Response(JSON.stringify((await db.getStore(request, data.data, 'addAddress') ?? [])), json);
-  if (data.method == 'getTime_uid') return new Response((await db.getTimeByUid(request, data.data)).toString());
-  if (data.method == 'getTime_email') return new Response((await db.getTimeByEmail(request, data.data)).toString());
-  if (data.method == 'count') return new Response(toString(await db.count(request)));
-  if (data.method == 'updateUser') {
-    const { data: user } = data
+  return c.json({
+    code: ResponseType.Code.fail,
+    data: {
+      code: ResponseType.FailCode.unauthorization,
+      message: '认证错误'
+    }
+  } as ResponseType.Fail, 401)
+}).put(async c => {
+  const header = store.header = c.req.header()
+  const authorization = z.string().safeParse(header.authorization)
+  if (!(authorization.success && await verify(authorization.data, jwt.secret, 'HS512'))) return c.json({
+    code: ResponseType.Code.fail,
+    data: {
+      code: ResponseType.FailCode.unauthorization,
+      message: '认证错误'
+    }
+  } as ResponseType.Fail, 401)
+
+  const body: User.WebDbSaveDeep = await c.req.json()
+  if (!dataType.webSaveDeepRule.safeParse(body).success) return c.json({
+    code: ResponseType.Code.fail,
+    data: {
+      code: ResponseType.FailCode.format,
+      message: '消息格式错误'
+    }
+  } as ResponseType.Fail, 406)
+  try {
     await db.api({
       data: {
-        tag: user.pid,
-        value: user,
+        tag: body.pid,
+        value: body,
         action: 'update'
       }
-    }, request)
+    })
     await db.api({
       data: {
-        tag: `${user.uid}.value`,
-        value: typeCheck.webSaveRule.parse(user),
+        tag: `${body.uid}.value`,
+        value: dataType.webSaveRule.parse(body),
         action: 'update'
       }
-    }, request)
+    })
     await db.api({
       data: {
-        tag: `${user.email}.value`,
-        value: typeCheck.webSaveRule.parse(user),
+        tag: `${body.email}.value`,
+        value: dataType.webSaveRule.parse(body),
         action: 'update'
       }
-    }, request)
+    })
     const time = new Date().getTime()
     await db.api({
-      tag: `${user.uid}.time`,
+      tag: `${body.uid}.time`,
       value: time,
       action: 'update'
-    }, request)
+    })
     await db.api({
-      tag: `${user.email}.time`,
+      tag: `${body.email}.time`,
       value: time,
       action: 'update'
-    }, request)
+    })
+    return c.json({
+      code: ResponseType.Code.success,
+      data: time
+    } as ResponseType.Success, 200)
+  } catch (error) {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: error
+    } as ResponseType.Success, 500)
+  }
+})
 
-    return new Response(JSON.stringify({ time }), { headers: { 'Content-Type': 'application/json' } });
-  }
-  if (data.method == 'addAddress') return new Response(toString(await db.setStore(request, data.data.to, 'addAddress', JSON.stringify((<User.WebDbSave[]>await db.getStore(request, data.data.to, 'addAddress')).push(data.data.from)))), json);
-  if (data.method == 'updateFile') {
-    const h = new Headers(request.headers)
-    if (updataType! && updataType == 'smms') {
-      h.set('Authorization', 'bipd73BhOqJYyPnMr8e5kA64jtWREomu')
-      return new Response(await (await fetch('https://sm.ms/api/v2' + data.path, {
-        headers: h,
-      })).text(), json)
+app.post('/time', async c => {
+  const header = store.header = c.req.header()
+  const body = dataType.getTime.safeParse(await c.req.json())
+  const authorization = z.string().safeParse(header.authorization)
+  if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
+    if (body.success) {
+      try {
+        switch (body.data.type) {
+          case "uid": {
+            return c.json({
+              code: ResponseType.Code.success,
+              data: await db.getTimeByUid(body.data.uid)
+            } as ResponseType.Success, 200)
+          }
+          case "email": {
+            return c.json({
+              code: ResponseType.Code.success,
+              data: await db.getTimeByEmail(body.data.email)
+            } as ResponseType.Success, 200)
+          }
+        }
+      } catch (error) {
+        return c.json({
+          code: ResponseType.Code.success,
+          data: error
+        } as ResponseType.Success, 500)
+      }
+
     }
-    if (updataType! && updataType == 'github') {
-      h.set('Authorization', 'token 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')
-      return new Response(await (await fetch('https://api.github.com/repos/wenxig/p2psaing-app-db' + data.path, {
-        headers: h,
-      })).text(), json)
-    }
+    return c.json({
+      code: ResponseType.Code.fail,
+      data: {
+        code: ResponseType.FailCode.format,
+        message: '消息格式错误'
+      }
+    } as ResponseType.Fail, 406)
   }
-  return new Response('method error');
-}
+  return c.json({
+    code: ResponseType.Code.fail,
+    data: {
+      code: ResponseType.FailCode.unauthorization,
+      message: '认证错误'
+    }
+  } as ResponseType.Fail, 401)
+})
+
+app.get('/count', async c => c.json({
+  code: ResponseType.Code.success,
+  data: await db.count()
+} as ResponseType.Success, 200))
+app.all('/file/*', async c => {
+  const header = store.header = c.req.header()
+  const authorization = z.string().safeParse(header.authorization).success ? header.authorization : ''
+  const headers = new Headers()
+  forEach(header, (v, k) => headers.set(k, v));
+  try {
+    switch (authorization) {
+      case 'github': {
+        headers.set('Authorization', 'token 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')
+        return c.json({
+          code: ResponseType.Code.success,
+          data: await fetch(c.req.path.replace(/^\/file/g, 'https://api.github.com'), { headers, body: await c.req.text(), method: c.req.method })
+        } as ResponseType.Success, 401)
+      }
+      case 'smms': {
+        headers.set('Authorization', 'bipd73BhOqJYyPnMr8e5kA64jtWREomu')
+        return c.json({
+          code: ResponseType.Code.success,
+          data: await fetch(c.req.path.replace(/^\/file/g, 'https://sm.ms'), { headers, body: await c.req.formData(), method: c.req.method })
+        } as ResponseType.Success, 401)
+      }
+      default: {
+        return c.json({
+          code: ResponseType.Code.fail,
+          data: {
+            code: ResponseType.FailCode.format,
+            message: '不允许的参数'
+          }
+        } as ResponseType.Fail, 405)
+      }
+    }
+  } catch (error) {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: error
+    } as ResponseType.Success, 500)
+  }
+})
+
+app.put('/user/:uid/store/*', async c => {
+  const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
+  try {
+    await db.setStore(c.req.param().uid, key, await c.req.text())
+    return c.json({
+      code: ResponseType.Code.success,
+      data: await c.req.json()
+    } as ResponseType.Success)
+  } catch (error) {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: error
+    } as ResponseType.Success, 500)
+  }
+}).delete(async c => {
+  const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
+  try {
+    await db.deleteStore(c.req.param().uid, key)
+    return c.json({
+      code: ResponseType.Code.success,
+      data: await c.req.json()
+    } as ResponseType.Success)
+  } catch (error) {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: error
+    } as ResponseType.Success, 500)
+  }
+}).get(async c => {
+  const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
+  try {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: await db.getStore(c.req.param().uid, key)
+    } as ResponseType.Success)
+  } catch (error) {
+    return c.json({
+      code: ResponseType.Code.success,
+      data: error
+    } as ResponseType.Success, 500)
+  }
+})
+
+app.get('/echo/*', c => c.text(c.req.url))
+
+app.all('*', c => {
+  return c.json({
+    code: ResponseType.Code.fail,
+    data: {
+      code: ResponseType.FailCode.falseMethod,
+      message: '未知的路径'
+    }
+  } as ResponseType.Fail, 405)
+})
+export default app

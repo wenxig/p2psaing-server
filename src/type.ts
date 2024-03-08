@@ -1,44 +1,41 @@
-import { z } from 'zod';
+import { z, type TypeOf } from 'zod';
 
 export const webSaveDeepRule = z.object({
-  email: z.string(),
+  email: z.string().email(),
   img: z.string(),
   lid: z.string(),
   name: z.string(),
-  uid: z.number(),
+  uid: z.number().int(),
   introduction: z.string().optional(),
-  password: z.string(),
   pid: z.string(),
   delImg: z.string().optional()
 })
+export type WebSaveDeepRule = TypeOf<typeof webSaveDeepRule>
 export const webSaveRule = z.object({
-  email: z.string(),
+  email: z.string().email(),
   img: z.string(),
   lid: z.string(),
   name: z.string(),
-  uid: z.number(),
+  uid: z.number().int(),
   introduction: z.string().optional()
 })
-export const baseRType = [z.object({
-  method: z.enum(['getUser_uid', 'getTime_uid']),
-  data: z.number()
-}), z.object({
-  method: z.enum(['getSerectUser', 'getUser_email', 'getTime_email', 'getAddAddress']),
-  data: z.string()
-}), z.object({
-  method: z.enum(['count'])
-}), z.object({
-  method: z.enum(['updateUser']),
-  data: webSaveDeepRule
-}), z.object({
-  method: z.enum(['getJWT'])
-}), z.object({
-  method: z.enum(['addAddress']),
-  data: z.object({
-    from: webSaveRule,
-    to: z.number().or(z.string())
-  })
-}), z.object({
-  method: z.enum(['updateFile']),
-  path: z.string()
-})]
+export type WebSaveRule = TypeOf<typeof webSaveRule>
+
+export const getUser = z.object({
+  type: z.enum(['uid']),
+  uid: z.number().int(),
+}).or(z.object({
+  type: z.enum(['email']),
+  email: z.string().email()
+})).or(z.object({
+  type: z.enum(['pid']),
+  pid: z.string()
+}))
+
+export const getTime = z.object({
+  type: z.enum(['uid']),
+  uid: z.number().int(),
+}).or(z.object({
+  type: z.enum(['email']),
+  email: z.string().email()
+}))
