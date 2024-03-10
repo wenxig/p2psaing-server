@@ -8,25 +8,15 @@ export const api = async (data: Record<string, any>) => {
     secret: '59c44c2f'
   }
   const body = new FormData()
-  for (const key in data) body.append(key, isString(data[key]) ? data[key] : JSON.stringify(data[key]))
-  console.log(body);
-
+  for (const key in data) body.set(key, isString(data[key]) ? data[key] : JSON.stringify(data[key]))
   const headers = new Headers()
-  headers.append('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8')
   forEach(store.header, (v, k) => headers.set(k, v))
-  let bodySearch = '?'
-  for (const key in data) {
-    const d = JSON.stringify(data[key])
-    bodySearch += `${key}=${d}&`
-  }
-  bodySearch = bodySearch.substring(0, bodySearch.length - 1).replace(/("(?=&))|((?<=\=)")|("$)/g, '')
   try {
-    return (await fetch(`https://tinywebdb.appinventor.space/api${bodySearch}`, {
+    return await (await fetch(`https://tinywebdb.appinventor.space/api`, {
       method: 'POST',
       headers,
       body,
       redirect: "follow",
-      cf: { apps: false },
     })).json() as any
   } catch (error) {
     console.log('err:', error)

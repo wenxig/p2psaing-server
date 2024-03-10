@@ -1,4 +1,4 @@
 name = "p2psaing"
-main = "dist/main.js"
+main = "dist/index.js"
 compatibility_date = "2023-05-18"
 compatibility_flags = [ "nodejs_compat" ]
