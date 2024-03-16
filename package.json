@@ -6,7 +6,7 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "rollup -c --bundleConfigAsCjs",
-    "dev": "bun bw & npx wrangler dev",
+    "dev": "npx wrangler dev",
     "bw": "bun build ./src/main.ts --outfile=./dist/index.js --watch --minify",
     "upload": "npx wrangler deploy"
   },

@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { sign, verify } from 'hono/jwt'
-import { ResponseType } from './res';
+import { ResponseType, createError, createSuccess, isType } from './res';
 import { z } from 'zod';
 import * as dataType from './type';
 import * as db from './db';
@@ -19,91 +19,46 @@ namespace jwt {
 
 }
 jwt.value = await sign(jwt.payload, jwt.secret, jwt.payload.alg)
-
-
 /* Cloudflare绑定 */
 type Bindings = {};
 /* Hono变量 */
 type Variables = {};
 type ContextEnv = { Bindings: Bindings; Variables: Variables };
 const app = new Hono<ContextEnv>()
-
-app.get('/jwt', c => c.json({
-  code: ResponseType.Code.success,
-  data: jwt.value
-} as ResponseType.Success, 200))
-async function handleGetUser(c: Context<ContextEnv, "/user", BlankInput>) {
+app.get('/jwt', c => createSuccess(c, jwt.value))
+app.use('/user/*', async (c, n) => {
   const header = store.header = c.req.header()
-  const body = dataType.getUser.safeParse(await c.req.json())
   const authorization = z.string().safeParse(header.authorization)
-  if (body.success) {
+  if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) return n()
+  return createError(c, '认证错误', ResponseType.FailCode.unauthorization, 401)
+})
+async function handleGetUser(c: Context<ContextEnv, "/user", BlankInput>) {
+  store.header = c.req.header()
+  const body = await c.req.json()
+  if (isType(body, dataType.getUser)) {
     try {
-      switch (body.data.type) {
+      switch (body.type) {
         case "uid": {
-          return c.json({
-            code: ResponseType.Code.success,
-            data: await db.searchByUid(body.data.uid)
-          } as ResponseType.Success, 200)
-
+          return createSuccess(c, await db.searchByUid(body.uid))
         }
         case "email": {
-          return c.json({
-            code: ResponseType.Code.success,
-            data: await db.searchByEmail(body.data.email)
-          } as ResponseType.Success, 200)
+          return createSuccess(c, await db.searchByEmail(body.email))
         }
         case "pid": {
-          if (authorization.success && await verify(authorization.data, jwt.secret, 'HS512')) {
-            return c.json({
-              code: ResponseType.Code.success,
-              data: await db.get(body.data.pid)
-            } as ResponseType.Success, 200)
-          }
-          return c.json({
-            code: ResponseType.Code.fail,
-            data: {
-              code: ResponseType.FailCode.unauthorization,
-              message: '认证错误'
-            }
-          } as ResponseType.Fail, 401)
+          return createSuccess(c, await db.get(body.pid))
         }
       }
     } catch (error) {
-      return c.json({
-        code: ResponseType.Code.success,
-        data: error
-      } as ResponseType.Success, 500)
+      return createError(c, error, ResponseType.FailCode.server, 500)
     }
   }
-  return c.json({
-    code: ResponseType.Code.fail,
-    data: {
-      code: ResponseType.FailCode.format,
-      message: '消息格式错误'
-    }
-  } as ResponseType.Fail, 406)
-
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
 }
 
 app.post('/user', handleGetUser).put(async c => {
-  const header = store.header = c.req.header()
-  const authorization = z.string().safeParse(header.authorization)
-  if (!(authorization.success && await verify(authorization.data, jwt.secret, 'HS512'))) return c.json({
-    code: ResponseType.Code.fail,
-    data: {
-      code: ResponseType.FailCode.unauthorization,
-      message: '认证错误'
-    }
-  } as ResponseType.Fail, 401)
-
+  store.header = c.req.header()
   const body: User.WebDbSaveDeep = await c.req.json()
-  if (!dataType.webSaveDeepRule.safeParse(body).success) return c.json({
-    code: ResponseType.Code.fail,
-    data: {
-      code: ResponseType.FailCode.format,
-      message: '消息格式错误'
-    }
-  } as ResponseType.Fail, 406)
+  if (!isType(body, dataType.webSaveDeepRule)) return createError(c, '消息格式错误', ResponseType.FailCode.format, 200)
   try {
     await db.api({
       tag: body.pid,
@@ -131,77 +86,71 @@ app.post('/user', handleGetUser).put(async c => {
       value: time,
       action: 'update'
     })
-    return c.json({
-      code: ResponseType.Code.success,
-      data: time
-    } as ResponseType.Success, 200)
+    return createSuccess(c, time)
   } catch (error) {
     console.error(error);
-
-    return c.json({
-      code: ResponseType.Code.success,
-      data: error
-    } as ResponseType.Success, 500)
+    return createError(c, error, ResponseType.FailCode.server, 500)
   }
 })
 
 app.post('/user/has', async c => {
   const _res = await handleGetUser(c)
   const res: ResponseType.Fail | ResponseType.Success = await _res.json()
-  if (res.code == ResponseType.Code.success) {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: !isEmpty(res.data)
-    } as ResponseType.Success, 200)
-  }
+  if (res.code == ResponseType.Code.success) return createSuccess(c, !isEmpty(res.data))
   return c.json(res, _res.status as StatusCode)
 })
 
-app.post('/time', async c => {
+app.post('/user/address', async c => {
   store.header = c.req.header()
-  const body = dataType.getTime.safeParse(await c.req.json())
-  if (body.success) {
+  const body = await c.req.json()
+  if (isType(body, dataType.getAddress)) {
     try {
-      switch (body.data.type) {
-        case "uid": {
-          return c.json({
-            code: ResponseType.Code.success,
-            data: await db.getTimeByUid(body.data.uid)
-          } as ResponseType.Success, 200)
-        }
-        case "email": {
-          return c.json({
-            code: ResponseType.Code.success,
-            data: await db.getTimeByEmail(body.data.email)
-          } as ResponseType.Success, 200)
-        }
-      }
+      if (body.type == 'uid') return createSuccess(c, await db.getStore(body.uid, `address`))
+      else return createSuccess(c, await db.getStore(body.email, `address`))
     } catch (error) {
-      return c.json({
-        code: ResponseType.Code.success,
-        data: error
-      } as ResponseType.Success, 500)
+      return createError(c, error, ResponseType.FailCode.server, 500)
     }
-
   }
-  return c.json({
-    code: ResponseType.Code.fail,
-    data: {
-      code: ResponseType.FailCode.format,
-      message: '消息格式错误'
-    }
-  } as ResponseType.Fail, 406)
-
-})
-
-app.get('/count', async c => {
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
+}).patch(async c => {
   store.header = c.req.header()
-  return c.json({
-    code: ResponseType.Code.success,
-    data: await db.count()
-  } as ResponseType.Success, 200)
+  const body = await c.req.json()
+  if (isType(body, dataType.addAddress)) {
+    try {
+      if ((!await db.get(body.pid)) || !(body.type == 'email' ? !await db.searchByEmail(body.email) : await db.searchByUid(body.uid))) return createError(c, '用户不存在', ResponseType.FailCode.notFound, 404)
+      const v: dataType.Link = JSON.parse(await db.getStore((<any>body).uid ?? (<any>body).email, `address`) || JSON.stringify({
+        group: [],
+        chat: [],
+      }))
+      v.chat.push({
+        uid: body.is
+      })
+      if (body.type == 'uid') return createSuccess(c, await db.setStore(body.uid, `address`, JSON.stringify(v)))
+      else return createSuccess(c, await db.setStore(body.email, `address`, JSON.stringify(v)))
+    } catch (error) {
+      return createError(c, error, ResponseType.FailCode.server, 500)
+    }
+  }
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
 })
-app.all('/file/*', async c => {
+
+app.post('/user/time', async c => {
+  store.header = c.req.header()
+  try {
+    const body = await c.req.json()
+    if (!isType(body, dataType.getTime)) return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
+    if (body.type == 'uid') return createSuccess(c, await db.getTimeByUid(body.uid))
+    else return createSuccess(c, await db.getTimeByEmail(body.email))
+  } catch (error) {
+    return createError(c, error, ResponseType.FailCode.server, 500)
+  }
+})
+
+app.get('/user/count', async c => {
+  store.header = c.req.header()
+  return createSuccess(c, await db.count())
+})
+app.all('/user/file/*', async c => {
   const header = store.header = c.req.header()
   const authorization = z.string().safeParse(header.authorization).success ? header.authorization : ''
   const headers = new Headers()
@@ -210,33 +159,18 @@ app.all('/file/*', async c => {
     switch (authorization) {
       case 'github': {
         headers.set('Authorization', 'token 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')
-        return c.json({
-          code: ResponseType.Code.success,
-          data: await fetch(c.req.path.replace(/^\/file/g, 'https://api.github.com'), { headers, body: await c.req.text(), method: c.req.method })
-        } as ResponseType.Success, 401)
+        return createSuccess(c, await fetch(c.req.path.replace(/^\/file/g, 'https://api.github.com'), { headers, body: await c.req.text(), method: c.req.method }))
       }
       case 'smms': {
         headers.set('Authorization', 'bipd73BhOqJYyPnMr8e5kA64jtWREomu')
-        return c.json({
-          code: ResponseType.Code.success,
-          data: await fetch(c.req.path.replace(/^\/file/g, 'https://sm.ms'), { headers, body: await c.req.formData(), method: c.req.method })
-        } as ResponseType.Success, 401)
+        return createSuccess(c, await fetch(c.req.path.replace(/^\/file/g, 'https://sm.ms'), { headers, body: await c.req.formData(), method: c.req.method }))
       }
       default: {
-        return c.json({
-          code: ResponseType.Code.fail,
-          data: {
-            code: ResponseType.FailCode.format,
-            message: '不允许的参数'
-          }
-        } as ResponseType.Fail, 405)
+        return createError(c, '不允许的参数', ResponseType.FailCode.format, 405)
       }
     }
   } catch (error) {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: error
-    } as ResponseType.Success, 500)
+    return createError(c, error, ResponseType.FailCode.server, 500)
   }
 })
 
@@ -245,55 +179,27 @@ app.put('/user/:uid/store/*', async c => {
   const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
   try {
     await db.setStore(c.req.param().uid, key, await c.req.text())
-    return c.json({
-      code: ResponseType.Code.success,
-      data: await c.req.json()
-    } as ResponseType.Success)
+    return createSuccess(c, await c.req.json())
   } catch (error) {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: error
-    } as ResponseType.Success, 500)
+    return createError(c, error, ResponseType.FailCode.server, 500)
   }
 }).delete(async c => {
   const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
   try {
     await db.deleteStore(c.req.param().uid, key)
-    return c.json({
-      code: ResponseType.Code.success,
-      data: await c.req.json()
-    } as ResponseType.Success)
+    return createSuccess(c, await c.req.json())
   } catch (error) {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: error
-    } as ResponseType.Success, 500)
+    return createError(c, error, ResponseType.FailCode.server, 500)
   }
 }).get(async c => {
   const key = c.req.path.match(/(?<=\/user\/\w+\/store\/).+/g)![0].replaceAll('/', '.')
   store.header = c.req.header()
   try {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: await db.getStore(c.req.param().uid, key)
-    } as ResponseType.Success)
+    return createSuccess(c, await db.getStore(c.req.param().uid, key))
   } catch (error) {
-    return c.json({
-      code: ResponseType.Code.success,
-      data: error
-    } as ResponseType.Success, 500)
+    return createError(c, error, ResponseType.FailCode.server, 500)
   }
 })
 
-app.get('/echo/*', c => c.text(c.req.url))
-
-app.all('*', c => {
-  return c.json({
-    code: ResponseType.Code.fail,
-    data: {
-      code: ResponseType.FailCode.falseMethod,
-      message: '未知的路径'
-    }
-  } as ResponseType.Fail, 405)
-})
+app.all('*', c => createError(c, '未知的路径', ResponseType.FailCode.falseMethod, 405))
 export default app

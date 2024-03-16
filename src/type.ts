@@ -50,3 +50,33 @@ export const getTime = z.object({
   type: z.enum(['email']),
   email: z.string().email()
 }))
+
+
+export const getAddress = z.object({
+  type: z.enum(['uid']),
+  uid: z.number().int(),
+}).or(z.object({
+  type: z.enum(['email']),
+  email: z.string().email()
+}))
+export const addAddress = z.object({
+  type: z.enum(['uid']),
+  uid: z.number().int(),
+  is: z.number(),
+  pid: z.string()
+}).or(z.object({
+  type: z.enum(['email']),
+  email: z.string().email(),
+  is: z.number(),
+  pid: z.string()
+}))
+
+export const linkRule = z.object({
+  group: z.object({
+    gid: z.string()
+  }).array(),
+  chat: z.object({
+    uid: z.number()
+  }).array(),
+})
+export type Link = TypeOf<typeof linkRule>
