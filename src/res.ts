@@ -26,13 +26,17 @@ export namespace ResponseType {
   }
 }
 export const isType = <T extends z.ZodType>(val: unknown, type: T): val is TypeOf<T> => type.safeParse(val).success
-export const createError = (c: Context, message: any, code: ResponseType.FailCode, netCode: number) => c.json({
-  code: ResponseType.Code.fail,
-  data: {
-    code,
-    message
-  }
-} as ResponseType.Fail, netCode as any)
+export const createError = (c: Context, message: any, code: ResponseType.FailCode, netCode: number) => {
+  const v = {
+    code: ResponseType.Code.fail,
+    data: {
+      code,
+      message
+    }
+  } 
+  console.error(v)
+  return c.json(v as ResponseType.Fail, netCode as any)
+}
 export const createSuccess = (c: Context, data?: any, netCode = 200) => c.json({
   code: ResponseType.Code.success,
   data

@@ -54,7 +54,7 @@ export const getTime = z.object({
 
 export const getAddress = z.object({
   type: z.enum(['uid']),
-  uid: z.number().int(),
+  uid: z.number().int().or(z.string().regex(/\d+/g)),
 }).or(z.object({
   type: z.enum(['email']),
   email: z.string().email()
@@ -75,8 +75,6 @@ export const linkRule = z.object({
   group: z.object({
     gid: z.string()
   }).array(),
-  chat: z.object({
-    uid: z.number()
-  }).array(),
+  chat: webSaveRule.array(),
 })
 export type Link = TypeOf<typeof linkRule>

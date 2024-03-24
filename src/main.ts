@@ -5,7 +5,7 @@ import { z } from 'zod';
 import * as dataType from './type';
 import * as db from './db';
 import { store } from "./store";
-import { forEach, isEmpty } from 'lodash-es';
+import { forEach, isEmpty, remove, toNumber } from 'lodash-es';
 import type { StatusCode } from 'hono/utils/http-status';
 import type { BlankInput } from 'hono/types';
 namespace jwt {
@@ -100,13 +100,41 @@ app.post('/user/has', async c => {
   return c.json(res, _res.status as StatusCode)
 })
 
-app.post('/user/address', async c => {
+const handleDelAddListUser = async (c: Context) => {
   store.header = c.req.header()
   const body = await c.req.json()
   if (isType(body, dataType.getAddress)) {
     try {
-      if (body.type == 'uid') return createSuccess(c, await db.getStore(body.uid, `address`))
-      else return createSuccess(c, await db.getStore(body.email, `address`))
+      if (body.type == 'uid') {
+        var val: dataType.Link = await db.getStore(body.uid, `add.address`)
+        remove(val.chat, { uid: toNumber(body.uid) })
+        await db.setStore(body.uid, `add.address`, JSON.stringify(val))
+      }
+      else {
+        var val: dataType.Link = await db.getStore(body.email, `add.address`)
+        remove(val.chat, { email: body.email })
+        await db.setStore(body.email, `add.address`, JSON.stringify(val))
+      }
+      return createSuccess(c,val)
+    } catch (error) {
+      return createError(c, error, ResponseType.FailCode.server, 500)
+    }
+  }
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
+}
+app.post('/user/address/add-list', async c => {
+  store.header = c.req.header()
+  const body = await c.req.json()
+  if (isType(body, dataType.getAddress)) {
+    try {
+      if (body.type == 'uid') return createSuccess(c, await db.getStore(body.uid, `add.address`) || {
+        group: [],
+        chat: [],
+      })
+      else return createSuccess(c, await db.getStore(body.email, `add.address`) || {
+        group: [],
+        chat: [],
+      })
     } catch (error) {
       return createError(c, error, ResponseType.FailCode.server, 500)
     }
@@ -118,22 +146,95 @@ app.post('/user/address', async c => {
   if (isType(body, dataType.addAddress)) {
     try {
       if ((!await db.get(body.pid)) || !(body.type == 'email' ? !await db.searchByEmail(body.email) : await db.searchByUid(body.uid))) return createError(c, '用户不存在', ResponseType.FailCode.notFound, 404)
-      const v: dataType.Link = JSON.parse(await db.getStore((<any>body).uid ?? (<any>body).email, `address`) || JSON.stringify({
+      const v: dataType.Link = JSON.parse(await db.getStore((<any>body).uid || (<any>body).email, `add.address`) || JSON.stringify({
         group: [],
         chat: [],
       }))
-      v.chat.push({
-        uid: body.is
-      })
-      if (body.type == 'uid') return createSuccess(c, await db.setStore(body.uid, `address`, JSON.stringify(v)))
-      else return createSuccess(c, await db.setStore(body.email, `address`, JSON.stringify(v)))
+      const u = await db.searchByUid(body.is)
+      v.chat.push(u)
+      if (body.type == 'uid') await db.setStore(body.uid, `add.address`, JSON.stringify(v))
+      else await db.setStore(body.email, `add.address`, JSON.stringify(v))
+      return createSuccess(c, v)
     } catch (error) {
       return createError(c, error, ResponseType.FailCode.server, 500)
     }
   }
   return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
-})
+}).delete(handleDelAddListUser)
 
+app.post('/user/address', async c => {
+  store.header = c.req.header()
+  const body = await c.req.json()
+  if (isType(body, dataType.getAddress)) {
+    try {
+      if (body.type == 'uid') return createSuccess(c, (await db.getStore(body.uid, `address`)) || {
+        group: [],
+        chat: [],
+      })
+      else return createSuccess(c, (await db.getStore(body.email, `address`)) || {
+        group: [],
+        chat: [],
+      })
+    } catch (error) {
+      return createError(c, error, ResponseType.FailCode.server, 500)
+    }
+  }
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
+}).patch(async c => {
+  store.header = c.req.header()
+  const body = await c.req.json()
+  if (isType(body, dataType.addAddress)) {
+    try {
+      if ((!await db.get(body.pid)) || !(body.type == 'email' ? (!await db.searchByEmail(body.email)) : await db.searchByUid(body.uid))) return createError(c, '用户不存在', ResponseType.FailCode.notFound, 404)
+      if (body.type == 'uid') {
+        var v: dataType.Link = JSON.parse(await db.getStore(body.uid, 'address') || JSON.stringify({
+          chat: [],
+          group: []
+        }))
+        const user = await db.searchByUid(body.uid)
+        if (isEmpty(user)) return createError(c, '用户未找到', ResponseType.FailCode.notFound, 404)
+        v.chat.push(user)
+        await db.setStore(body.uid, `address`, JSON.stringify(v))
+      }
+      else {
+        var v: dataType.Link = JSON.parse(await db.getStore(body.email, 'address') || JSON.stringify({
+          chat: [],
+          group: []
+        }))
+        const user = await db.searchByEmail(body.email)
+        if (isEmpty(user)) return createError(c, '用户未找到', ResponseType.FailCode.notFound, 404)
+        v.chat.push(user)
+        await db.setStore(body.email, `address`, JSON.stringify(v))
+      }
+      await handleDelAddListUser(c)
+      return createSuccess(c, v)
+    } catch (error) {
+      console.error(error)
+      return createError(c, error, ResponseType.FailCode.server, 500)
+    }
+  }
+  return createError(c, '消息格式错误', ResponseType.FailCode.format, 406)
+}).delete(async (c: Context) => {
+  store.header = c.req.header()
+  const body = await c.req.json()
+  if (isType(body, dataType.getAddress)) {
+    try {
+      if (body.type == 'uid') {
+        var val: dataType.Link = await db.getStore(body.uid, `address`)
+        remove(val.chat, { uid: toNumber(body.uid) })
+        await db.setStore(body.uid, `address`, JSON.stringify(val))
+      }
+      else {
+        var val: dataType.Link = await db.getStore(body.email, `address`)
+        remove(val.chat, { email: body.email })
+        await db.setStore(body.email, `address`, JSON.stringify(val))
+      }
+      return createSuccess(c, val)
+    } catch (error) {
+      return createError(c, error, ResponseType.FailCode.server, 500)
+    }
+  }
+})
 app.post('/user/time', async c => {
   store.header = c.req.header()
   try {
@@ -149,29 +250,6 @@ app.post('/user/time', async c => {
 app.get('/user/count', async c => {
   store.header = c.req.header()
   return createSuccess(c, await db.count())
-})
-app.all('/user/file/*', async c => {
-  const header = store.header = c.req.header()
-  const authorization = z.string().safeParse(header.authorization).success ? header.authorization : ''
-  const headers = new Headers()
-  forEach(header, (v, k) => headers.set(k, v));
-  try {
-    switch (authorization) {
-      case 'github': {
-        headers.set('Authorization', 'token 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')
-        return createSuccess(c, await fetch(c.req.path.replace(/^\/file/g, 'https://api.github.com'), { headers, body: await c.req.text(), method: c.req.method }))
-      }
-      case 'smms': {
-        headers.set('Authorization', 'bipd73BhOqJYyPnMr8e5kA64jtWREomu')
-        return createSuccess(c, await fetch(c.req.path.replace(/^\/file/g, 'https://sm.ms'), { headers, body: await c.req.formData(), method: c.req.method }))
-      }
-      default: {
-        return createError(c, '不允许的参数', ResponseType.FailCode.format, 405)
-      }
-    }
-  } catch (error) {
-    return createError(c, error, ResponseType.FailCode.server, 500)
-  }
 })
 
 app.put('/user/:uid/store/*', async c => {

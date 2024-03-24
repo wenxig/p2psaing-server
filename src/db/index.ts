@@ -26,8 +26,6 @@ export const api = async (data: Record<string, any>) => {
     'User-Agent': 'Mozilla/5.0 (Macintosh; IBM Mac OS X 1_0_0) AppleWebKit/1.0 (KHTML, like Gecko) Chrome/1.0.0.0 Safari/1.0'
   }, (v, k) => headers.set(k, v))
   try {
-    console.log(body);
-
     return await (await fetch(`https://tinywebdb.appinventor.space/api`, {
       method: 'POST',
       headers,
